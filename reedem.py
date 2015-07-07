@@ -10,14 +10,16 @@ __license__     = "GPL"
 __version__     = "1.0"
 __maintainer__  = "Eugenio Panadero"
 
+import re
+import datetime as dt
+
+import pandas as pd
 
 from dataweb import DataWeb
 from reedemconf import *
 import reedemplot as rdp
 
-import re
-import pandas as pd
-import datetime as dt
+
 #import matplotlib.pyplot as plt
 #%matplotlib inline
 
@@ -28,23 +30,19 @@ class DatosREE(DataWeb):
     def __init__(self, forze_update=False, verbose=True):
         super(DatosREE, self).__init__(PATH_DATABASE,
                                        u'Datos de: demanda.ree.es',
-                                       self.URL_DATOS_DIA,
-                                       self.procesa_datos_demanda_dia,
+                                       self.url_data_dia, self.procesa_data_dia,
                                        forze_update, verbose,
                                        TZ=TZ, DATE_FMT=DATE_FMT, DATE_INI=DATE_INI,
                                        TS_DATA=TS_DATA, NUM_TS_MIN_PARA_ACT=NUM_TS_MIN_PARA_ACT,
                                        FREQ_DATA=FREQ_DATA,DELTA_DATA=DELTA_DATA,
                                        NUM_RETRIES=NUM_RETRIES,MAX_THREADS_REQUESTS=MAX_THREADS_REQUESTS,
                                        DIAS_MERGE_MAX=DIAS_MERGE_MAX,MAX_THREADS_MERGE=MAX_THREADS_MERGE)
-
-                                       # MAX_ACT_EXEC=100)
         self.errores = self.busca_errores_data(False)
         self.save_data('errores', self.errores)
         print(self.store.keys())
         print(self.store)
 
-
-    def URL_DATOS_DIA(self, str_dia):
+    def url_data_dia(self, str_dia):
         if type(str_dia) is pd.Timestamp:
             str_dia = str_dia.strftime(DATE_FMT)
         else:
@@ -52,25 +50,24 @@ class DatosREE(DataWeb):
         return 'https://demanda.ree.es/' + 'WSvisionaMoviles' + 'PeninsulaRest' + '/resources/demanda' + 'GeneracionPeninsula' \
                + '?callback=angular.callbacks._2&curva=' + 'DEMANDA' + '&fecha=' + str_dia
 
+    def procesa_data_dia(self, str_dia, dict_data):
 
-    def procesa_datos_demanda_dia(self, str_dia, dict_data):
-
-        def _limpia_string_timestamp(strtz, hay_cambio_dst, strtz_next, ts_bruto):
-            if hay_cambio_dst == True:
+        def _limpia_string_timestamp(sufijo_tz, cambio_dst, sufijo_tz_next, ts_bruto):
+            if cambio_dst:
                 if ts_bruto.find('A') > 0:
-                    ts_limpio = ts_bruto.replace('A','') + strtz
+                    ts_limpio = ts_bruto.replace('A', '') + sufijo_tz
                 elif ts_bruto.find('B') > 0:
-                    ts_limpio = ts_bruto.replace('B','') + strtz_next
+                    ts_limpio = ts_bruto.replace('B', '') + sufijo_tz_next
                 else:
                     ts_limpio = ts_bruto + pd.Timestamp(ts_bruto,tz=TZ).strftime(' %z')
             else:
-                ts_limpio = ts_bruto + strtz
+                ts_limpio = ts_bruto + sufijo_tz
             return pd.Timestamp(ts_limpio,tz=TZ)
 
         tsdia = pd.Timestamp(str_dia,tz=TZ)
         strtz, strtz_next = tsdia.strftime(' %z'), (tsdia + dt.timedelta(2)).strftime(' %z')
         hay_cambio_dst = strtz_next != strtz
-        rg_contenido = re.compile(r'angular\.callbacks\.\_2\(\{(.*?)\}\)\;')
+        rg_contenido = re.compile(r'angular\.callbacks\._2\(\{(.*?)\}\);')
         try:
             str_content = rg_contenido.findall(dict_data[str_dia][1])[0]
             if len(str_content) > 0:
@@ -126,22 +123,24 @@ class DatosREE(DataWeb):
     def plot_prod_vs_dem(self, prodtot=None, demanda=None):
         # Plot Producción total vs Demanda
         datos_plot = data if data is not None else self.data
-        rdp.plot_prod_vs_dem(datos_plot, prodtot, demanda)
+        # TODO Arreglar plot prod vs dem
+        rdp.plot_prod_vs_dem(prodtot, demanda)
 
     def plot_ajuste_prod_dem(self, prodtot=None, exceso=None):
         # Plot Ajuste entre Producción total y Demanda
         datos_plot = data if data is not None else self.data
-        rdp.plot_ajuste_prod_dem(datos_plot, prodtot,exceso)
+        # TODO Arreglar plot prod vs dem
+        rdp.plot_ajuste_prod_dem(prodtot, exceso)
 
-    def plot_tipos_prod(self, data=None,cols_prod=COLS_PROD):
+    def plot_tipos_prod(self, data=None, cols_prod=COLS_PROD):
         # Plot Producción por tipos
         datos_plot = data if data is not None else self.data
-        rdp.plot_tipos_prod(datos_plot, COLS_PROD)
+        rdp.plot_tipos_prod(datos_plot, cols_prod)
 
     def plotarea_stack_tipos_prod(self, data=None, cols_prod=COLS_PROD):
         # Plot Stack Producción por tipos
         datos_plot = data if data is not None else self.data
-        rdp.plotarea_stack_tipos_prod(datos_plot, COLS_PROD)
+        rdp.plotarea_stack_tipos_prod(datos_plot, cols_prod)
 
     def plot_dia_raro(self, data=None, str_dia = '2007-11-24'):
         # Plot día raro (datos incorrectos, desconexiones, etc.)
@@ -153,8 +152,9 @@ class DatosREE(DataWeb):
         datos_plot = data if data is not None else self.data
         rdp.plot_renov(datos_plot)
 
-    def plot_resample(self, data=None,freq='1M',how=[np.min, np.max, np.mean],kind='line',tupla_mag=None):
+    def plot_resample(self, data=None, freq='1M', how=np.mean, kind='line', tupla_mag=None):
         # Plot de resample datos'
+        # how=[np.min, np.max, np.mean]
         datos_plot = data if data is not None else self.data
         rdp.plot_resample(datos_plot,freq,how,kind,tupla_mag)
 
@@ -169,10 +169,10 @@ class DatosREE(DataWeb):
 # Main
 #############################
 def main():
-    '''
+    """
      Actualiza la base de datos de demanda y producción eléctrica de REE almacenados como dataframe en local,
      creando una nueva si no existe o hubiere algún problema. Los datos registrados se guardan en HDF5
-    '''
+    """
     datos_ree = DatosREE(forze_update=False)#,False)
     datos_ree.close()
     return datos_ree, datos_ree.data
